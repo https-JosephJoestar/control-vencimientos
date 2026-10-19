@@ -1,0 +1,114 @@
+// esquema de la base de datos
+// despues de cambiar algo aqui correr: npx prisma migrate dev --name nombre-del-cambio
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum Role {
+  ADMIN // ve todas las sedes
+  BRANCH_MANAGER // encargado, solo ve su sede
+}
+
+// tipos de movimiento que le pueden pasar a un lote
+enum MovementType {
+  ENTRY // llego mercancia o se registro en el conteo inicial
+  COUNT_ADJUST // se reconto y la cantidad era otra
+  TRANSFER_OUT // salio hacia otra sede
+  TRANSFER_IN // llego desde otra sede
+  RETURN // devolucion al proveedor
+  PROMOTION // se puso en promocion para que rote
+  WRITE_OFF // baja por vencimiento o daño
+}
+
+// sede = la bodega de la distribuidora o cada farmacia
+model Branch {
+  id          Int      @id @default(autoincrement())
+  name        String   @unique
+  isWarehouse Boolean  @default(false) // true para la bodega de la distribuidora
+  createdAt   DateTime @default(now())
+
+  users User[]
+  lots  Lot[]
+}
+
+model User {
+  id           Int      @id @default(autoincrement())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         Role     @default(BRANCH_MANAGER)
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now())
+
+  // null si es admin
+  branchId Int?
+  branch   Branch? @relation(fields: [branchId], references: [id])
+
+  movements LotMovement[]
+}
+
+model Supplier {
+  id                 Int    @id @default(autoincrement())
+  name               String @unique
+  // cuantos meses antes del vencimiento acepta devoluciones, null si no acepta
+  returnWindowMonths Int?
+
+  products Product[]
+}
+
+// el catalogo, se puede importar desde el excel de productos de siigo
+model Product {
+  id         Int     @id @default(autoincrement())
+  siigoCode  String  @unique // codigo del producto en siigo
+  barcode    String? @unique // codigo de barras (EAN)
+  name       String
+  laboratory String?
+  unitCost   Decimal @default(0) @db.Decimal(12, 2)
+
+  supplierId Int?
+  supplier   Supplier? @relation(fields: [supplierId], references: [id])
+
+  lots Lot[]
+}
+
+// un lote de un producto en una sede, es lo que siigo no maneja
+model Lot {
+  id            Int      @id @default(autoincrement())
+  lotNumber     String
+  expiresAt     DateTime @db.Date
+  quantity      Int
+  // ultima vez que alguien confirmo la cantidad fisicamente
+  lastCountedAt DateTime @default(now())
+  createdAt     DateTime @default(now())
+
+  productId Int
+  product   Product @relation(fields: [productId], references: [id])
+  branchId  Int
+  branch    Branch  @relation(fields: [branchId], references: [id])
+
+  movements LotMovement[]
+
+  // el mismo lote del mismo producto no se puede repetir en una sede
+  @@unique([productId, branchId, lotNumber])
+  @@index([expiresAt])
+}
+
+// historial de todo lo que le pasa a un lote
+model LotMovement {
+  id        Int          @id @default(autoincrement())
+  type      MovementType
+  quantity  Int
+  note      String?
+  createdAt DateTime     @default(now())
+
+  lotId  Int
+  lot    Lot  @relation(fields: [lotId], references: [id])
+  userId Int
+  user   User @relation(fields: [userId], references: [id])
+}

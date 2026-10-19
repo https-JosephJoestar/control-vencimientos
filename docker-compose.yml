@@ -1,0 +1,15 @@
+# base de datos para desarrollo, se levanta con: docker compose up -d
+services:
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: vencimientos
+      POSTGRES_PASSWORD: vencimientos
+      POSTGRES_DB: vencimientos
+    ports:
+      - "5434:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+volumes:
+  pgdata:
